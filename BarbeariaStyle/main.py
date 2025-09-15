@@ -1,5 +1,5 @@
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'  # Necessário para usar o flash
@@ -51,6 +51,10 @@ def init_db():
                      NOT
                      NULL,
                      profissional
+                     TEXT
+                     NOT
+                     NULL,
+                     servico
                      TEXT
                      NOT
                      NULL,
@@ -112,6 +116,35 @@ def init_db():
                      NULL
                  )
                  ''')
+    # Cria a tabela de vendas para o financeiro do profissional
+    conn.execute('''
+                 CREATE TABLE IF NOT EXISTS vendas
+                 (
+                     id
+                     INTEGER
+                     PRIMARY
+                     KEY
+                     AUTOINCREMENT,
+                     profissional_nome
+                     TEXT
+                     NOT
+                     NULL,
+                     valor
+                     REAL
+                     NOT
+                     NULL,
+                     forma_pagamento
+                     TEXT
+                     NOT
+                     NULL,
+                     observacao
+                     TEXT,
+                     data_venda
+                     TEXT
+                     NOT
+                     NULL
+                 )
+                 ''')
     # Cria a tabela de configurações
     conn.execute('''
                  CREATE TABLE IF NOT EXISTS configuracoes
@@ -144,8 +177,26 @@ def home():
     configuracoes = {row['chave']: row['valor'] for row in
                      conn.execute('SELECT chave, valor FROM configuracoes').fetchall()}
     servicos = conn.execute('SELECT * FROM servicos').fetchall()
+    profissionais = conn.execute('SELECT nome FROM profissionais').fetchall()
     conn.close()
-    return render_template('index.html', configuracoes=configuracoes, servicos=servicos)
+    return render_template('index.html', configuracoes=configuracoes, servicos=servicos, profissionais=profissionais)
+
+
+@app.route('/agendar_servico', methods=['POST'])
+def agendar_servico():
+    cliente_nome = request.form['cliente_nome']
+    profissional = request.form['profissional']
+    servico = request.form['servico']
+    data = request.form['data']
+    horario = request.form['horario']
+
+    conn = get_db_connection()
+    conn.execute('INSERT INTO agendamentos (cliente_nome, profissional, servico, data, horario) VALUES (?, ?, ?, ?, ?)',
+                 (cliente_nome, profissional, servico, data, horario))
+    conn.commit()
+    conn.close()
+    flash('Agendamento realizado com sucesso!', 'success')
+    return redirect(url_for('painel_cliente', cliente_nome=cliente_nome))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -164,8 +215,8 @@ def login():
         conn.close()
 
         if usuario:
-            # Autenticação de usuário bem-sucedida, redirecionar para a página principal
-            return redirect(url_for('home'))
+            # Autenticação de usuário bem-sucedida, redirecionar para o painel do cliente
+            return redirect(url_for('painel_cliente', cliente_nome=usuario['nome']))
         else:
             flash('Login ou senha incorretos!', 'error')
             return render_template('login.html')
@@ -185,12 +236,7 @@ def login_profissional():
         conn.close()
 
         if profissional:
-            conn = get_db_connection()
-            agendamentos_do_profissional = conn.execute('SELECT * FROM agendamentos WHERE profissional = ?',
-                                                        (profissional['nome'],)).fetchall()
-            conn.close()
-            return render_template('painel_profissional.html', profissional=profissional,
-                                   agendamentos=agendamentos_do_profissional)
+            return redirect(url_for('painel_profissional', profissional_nome=profissional['nome']))
         else:
             flash('Email ou CPF/CNPJ incorretos.', 'error')
             return render_template('login_profissional.html')
@@ -198,9 +244,153 @@ def login_profissional():
     return render_template('login_profissional.html')
 
 
+@app.route('/painel_cliente')
+def painel_cliente():
+    cliente_nome = request.args.get('cliente_nome')
+    if not cliente_nome:
+        flash('Acesso não autorizado.', 'error')
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    agendamentos = conn.execute('SELECT * FROM agendamentos WHERE cliente_nome = ?', (cliente_nome,)).fetchall()
+    servicos = conn.execute('SELECT * FROM servicos').fetchall()
+    profissionais = conn.execute('SELECT nome FROM profissionais').fetchall()
+    configuracoes = {row['chave']: row['valor'] for row in
+                     conn.execute('SELECT chave, valor FROM configuracoes').fetchall()}
+    conn.close()
+
+    return render_template('painel_cliente.html', cliente_nome=cliente_nome, agendamentos=agendamentos,
+                           servicos=servicos, profissionais=profissionais, configuracoes=configuracoes)
+
+
+@app.route('/painel_cliente/cancelar_agendamento', methods=['POST'])
+def painel_cliente_cancelar_agendamento():
+    agendamento_id = request.form['id']
+    cliente_nome = request.form['cliente_nome']
+
+    conn = get_db_connection()
+    conn.execute('DELETE FROM agendamentos WHERE id = ?', (agendamento_id,))
+    conn.commit()
+    conn.close()
+    flash('Agendamento cancelado com sucesso!', 'success')
+    return redirect(url_for('painel_cliente', cliente_nome=cliente_nome))
+
+
 @app.route('/painel_profissional')
 def painel_profissional():
-    return render_template('painel_profissional.html')
+    profissional_nome = request.args.get('profissional_nome')
+    if not profissional_nome:
+        flash('Acesso não autorizado.', 'error')
+        return redirect(url_for('login_profissional'))
+
+    conn = get_db_connection()
+    profissional = conn.execute('SELECT * FROM profissionais WHERE nome = ?', (profissional_nome,)).fetchone()
+    agendamentos_do_profissional = conn.execute('SELECT * FROM agendamentos WHERE profissional = ?',
+                                                (profissional_nome,)).fetchall()
+    conn.close()
+
+    return render_template('painel_profissional.html', profissional=profissional,
+                           agendamentos=agendamentos_do_profissional)
+
+
+@app.route('/painel_profissional/adicionar_agendamento', methods=['POST'])
+def painel_profissional_adicionar_agendamento():
+    cliente_nome = request.form['cliente_nome']
+    profissional_nome = request.form['profissional_nome']
+    data = request.form['data']
+    horario = request.form['horario']
+
+    conn = get_db_connection()
+    conn.execute('INSERT INTO agendamentos (cliente_nome, profissional, servico, data, horario) VALUES (?, ?, ?, ?, ?)',
+                 (cliente_nome, profissional_nome, data, horario))
+    conn.commit()
+    conn.close()
+    flash('Agendamento adicionado com sucesso!')
+    return redirect(url_for('painel_profissional', profissional_nome=profissional_nome))
+
+
+@app.route('/painel_profissional/excluir_agendamento', methods=['POST'])
+def painel_profissional_excluir_agendamento():
+    agendamento_id = request.form['id']
+    profissional_nome = request.form['profissional_nome']
+    conn = get_db_connection()
+    conn.execute('DELETE FROM agendamentos WHERE id = ?', (agendamento_id,))
+    conn.commit()
+    conn.close()
+    flash('Agendamento excluído com sucesso!')
+    return redirect(url_for('painel_profissional', profissional_nome=profissional_nome))
+
+
+@app.route('/painel_profissional/financeiro')
+def painel_profissional_financeiro():
+    profissional_nome = request.args.get('profissional_nome')
+    if not profissional_nome:
+        flash('Acesso não autorizado.', 'error')
+        return redirect(url_for('login_profissional'))
+
+    conn = get_db_connection()
+
+    # Busca a comissão do profissional
+    profissional = conn.execute('SELECT comissao FROM profissionais WHERE nome = ?', (profissional_nome,)).fetchone()
+    comissao = profissional['comissao'] if profissional and profissional['comissao'] else 0
+
+    # Lógica para calcular o faturamento em tempo real, já com a comissão aplicada
+    faturamento_dia = \
+    conn.execute("SELECT SUM(valor) FROM vendas WHERE profissional_nome = ? AND data_venda = date('now')",
+                 (profissional_nome,)).fetchone()[0] or 0
+    faturamento_semana = \
+    conn.execute("SELECT SUM(valor) FROM vendas WHERE profissional_nome = ? AND data_venda >= date('now', '-7 days')",
+                 (profissional_nome,)).fetchone()[0] or 0
+    faturamento_mes = conn.execute(
+        "SELECT SUM(valor) FROM vendas WHERE profissional_nome = ? AND strftime('%Y-%m', data_venda) = strftime('%Y-%m', 'now')",
+        (profissional_nome,)).fetchone()[0] or 0
+
+    conn.close()
+
+    faturamento_data = {
+        'dia': faturamento_dia * (comissao / 100),
+        'semana': faturamento_semana * (comissao / 100),
+        'mes': faturamento_mes * (comissao / 100)
+    }
+
+    return render_template('painel_profissional_financeiro.html', profissional_nome=profissional_nome,
+                           faturamento=faturamento_data)
+
+
+@app.route('/painel_profissional/<profissional_nome>/adicionar_venda', methods=['POST'])
+def painel_profissional_adicionar_venda(profissional_nome):
+    valor_venda = request.form['valor_venda']
+    forma_pagamento = request.form['forma_pagamento']
+    observacao = request.form['observacao']
+
+    conn = get_db_connection()
+    conn.execute(
+        'INSERT INTO vendas (profissional_nome, valor, forma_pagamento, observacao, data_venda) VALUES (?, ?, ?, ?, date("now"))',
+        (profissional_nome, valor_venda, forma_pagamento, observacao))
+    conn.commit()
+    conn.close()
+    flash('Venda adicionada com sucesso!')
+    return redirect(url_for('painel_profissional_financeiro', profissional_nome=profissional_nome))
+
+
+@app.route('/api/check_availability')
+def check_availability():
+    profissional = request.args.get('profissional')
+    data = request.args.get('data')
+    horario = request.args.get('horario')
+
+    if not profissional or not data or not horario:
+        return jsonify({'available': False, 'message': 'Informações incompletas.'})
+
+    conn = get_db_connection()
+    agendamento = conn.execute('SELECT * FROM agendamentos WHERE profissional = ? AND data = ? AND horario = ?',
+                               (profissional, data, horario)).fetchone()
+    conn.close()
+
+    if agendamento:
+        return jsonify({'available': False, 'message': 'Horário já agendado.'})
+    else:
+        return jsonify({'available': True, 'message': 'Horário disponível.'})
 
 
 @app.route('/cadastro', methods=['GET', 'POST'])
@@ -291,21 +481,24 @@ def gerenciar_agendamentos():
         if 'adicionar' in request.form:
             cliente_nome = request.form['cliente_nome']
             profissional = request.form['profissional']
+            servico = request.form['servico']
             data = request.form['data']
             horario = request.form['horario']
-            conn.execute('INSERT INTO agendamentos (cliente_nome, profissional, data, horario) VALUES (?, ?, ?, ?)',
-                         (cliente_nome, profissional, data, horario))
+            conn.execute(
+                'INSERT INTO agendamentos (cliente_nome, profissional, servico, data, horario) VALUES (?, ?, ?, ?, ?)',
+                (cliente_nome, profissional, servico, data, horario))
             conn.commit()
             flash('Agendamento adicionado com sucesso!')
         elif 'editar' in request.form:
             agendamento_id = request.form['id']
             cliente_nome = request.form['cliente_nome']
             profissional = request.form['profissional']
+            servico = request.form['servico']
             data = request.form['data']
             horario = request.form['horario']
             conn.execute(
-                'UPDATE agendamentos SET cliente_nome = ?, profissional = ?, data = ?, horario = ? WHERE id = ?',
-                (cliente_nome, profissional, data, horario, agendamento_id))
+                'UPDATE agendamentos SET cliente_nome = ?, profissional = ?, servico = ?, data = ?, horario = ? WHERE id = ?',
+                (cliente_nome, profissional, servico, data, horario, agendamento_id))
             conn.commit()
             flash('Agendamento atualizado com sucesso!')
         elif 'excluir' in request.form:
@@ -319,10 +512,11 @@ def gerenciar_agendamentos():
                                           (request.args.get('editar_id'),)).fetchone()
 
     profissionais = conn.execute('SELECT nome FROM profissionais').fetchall()
+    servicos = conn.execute('SELECT nome FROM servicos').fetchall()
     agendamentos = conn.execute('SELECT * FROM agendamentos').fetchall()
     conn.close()
     return render_template('gerenciar_agendamentos.html', agendamentos=agendamentos, profissionais=profissionais,
-                           agendamento_editar=agendamento_editar)
+                           servicos=servicos, agendamento_editar=agendamento_editar)
 
 
 # Rotas para Gerenciar Serviços
@@ -416,20 +610,39 @@ def gerenciar_profissionais():
 
 @app.route('/relatorios')
 def relatorios():
-    # Dados de exemplo para os dashboards de faturamento
+    conn = get_db_connection()
+
+    # Lógica para calcular o faturamento geral em tempo real
+    faturamento_dia = conn.execute("SELECT SUM(valor) FROM vendas WHERE data_venda = date('now')").fetchone()[0] or 0
+    faturamento_semana = \
+    conn.execute("SELECT SUM(valor) FROM vendas WHERE data_venda >= date('now', '-7 days')").fetchone()[0] or 0
+    faturamento_mes = conn.execute(
+        "SELECT SUM(valor) FROM vendas WHERE strftime('%Y-%m', data_venda) = strftime('%Y-%m', 'now')").fetchone()[
+                          0] or 0
+
     faturamento_data = {
-        'dia': 750.50,
-        'semana': 4200.00,
-        'mes': 18500.75
+        'dia': faturamento_dia,
+        'semana': faturamento_semana,
+        'mes': faturamento_mes
     }
 
-    # Dados de exemplo para as formas de pagamento
+    # Lógica para calcular o faturamento por forma de pagamento
     pagamentos_data = {
-        'dinheiro': 150.00,
-        'pix': 300.50,
-        'debito': 200.00,
-        'credito': 100.00
+        'dinheiro': conn.execute(
+            "SELECT SUM(valor) FROM vendas WHERE forma_pagamento = 'dinheiro' AND data_venda = date('now')").fetchone()[
+                        0] or 0,
+        'pix': conn.execute(
+            "SELECT SUM(valor) FROM vendas WHERE forma_pagamento = 'pix' AND data_venda = date('now')").fetchone()[
+                   0] or 0,
+        'debito': conn.execute(
+            "SELECT SUM(valor) FROM vendas WHERE forma_pagamento = 'debito' AND data_venda = date('now')").fetchone()[
+                      0] or 0,
+        'credito': conn.execute(
+            "SELECT SUM(valor) FROM vendas WHERE forma_pagamento = 'credito' AND data_venda = date('now')").fetchone()[
+                       0] or 0,
     }
+
+    conn.close()
 
     return render_template('relatorios.html', faturamento=faturamento_data, pagamentos=pagamentos_data)
 
@@ -469,7 +682,6 @@ def configuracoes():
     configuracoes = {row['chave']: row['valor'] for row in configuracoes_db}
     conn.close()
     return render_template('configuracoes.html', configuracoes=configuracoes)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
