@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerenciar Agendamentos - Painel de Admin</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Painel do Profissional - Barbearia Style</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -72,39 +72,27 @@
         <nav class="container mx-auto flex justify-between items-center">
             <h1 class="text-3xl font-bold text-primary cinzel-font">Barbearia Style</h1>
             <div class="space-x-4">
-                <a href="{{ url_for('home') }}" class="text-gray-400 hover:text-primary transition-colors duration-200">Home</a>
-                <a href="{{ url_for('admin') }}" class="text-primary font-bold">Painel</a>
-                <a href="{{ url_for('configuracoes') }}" class="text-gray-400 hover:text-primary transition-colors duration-200">Contato</a>
+                <p class="text-gray-400">Bem-vindo, {{ profissional['nome'] }}</p>
+                <a href="{{ url_for('painel_profissional', profissional_nome=profissional['nome']) }}" class="text-primary font-bold">Agenda</a>
+                <a href="{{ url_for('painel_profissional_financeiro', profissional_nome=profissional['nome']) }}" class="text-gray-400 hover:text-primary transition-colors duration-200">Financeiro</a>
+                <a href="/" class="text-gray-400 hover:text-primary transition-colors duration-200">Sair</a>
             </div>
         </nav>
     </header>
 
-    <!-- Painel de Gerenciamento de Agendamentos -->
+    <!-- Painel do Profissional -->
     <main class="flex-grow p-8 container mx-auto">
         <div class="bg-card p-8 rounded-lg shadow-2xl">
-            <h2 class="text-3xl font-bold text-primary mb-8">Gerenciar Agendamentos</h2>
-
-            {% with messages = get_flashed_messages() %}
-                {% if messages %}
-                    <div class="mb-4">
-                        {% for message in messages %}
-                            <p class="text-green-400 bg-green-900/50 p-3 rounded-lg text-sm">{{ message }}</p>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-
+            <h2 class="text-3xl font-bold text-primary mb-8">Seus Agendamentos</h2>
             <div class="mb-6 flex justify-between items-center">
                 <h3 class="text-xl font-bold">Agenda do Dia</h3>
-                <button onclick="openModal('add')" class="btn-primary px-4 py-2 rounded-full text-sm">Adicionar Novo Agendamento</button>
+                <button onclick="openModal('add')" class="btn-primary px-4 py-2 rounded-full text-sm">Lançar Novo Agendamento</button>
             </div>
-
             <div class="overflow-x-auto">
                 <table class="w-full text-sm text-left text-gray-400">
                     <thead class="text-xs text-gray-200 uppercase bg-[#2a2a2a]">
                         <tr>
                             <th scope="col" class="py-3 px-6">Cliente</th>
-                            <th scope="col" class="py-3 px-6">Profissional</th>
                             <th scope="col" class="py-3 px-6">Data</th>
                             <th scope="col" class="py-3 px-6">Horário</th>
                             <th scope="col" class="py-3 px-6">Ações</th>
@@ -114,46 +102,36 @@
                         {% for agendamento in agendamentos %}
                         <tr class="bg-card border-b border-[#3a3a3a]">
                             <td class="py-4 px-6 font-medium text-gray-200">{{ agendamento['cliente_nome'] }}</td>
-                            <td class="py-4 px-6">{{ agendamento['profissional'] }}</td>
                             <td class="py-4 px-6">{{ agendamento['data'] }}</td>
                             <td class="py-4 px-6">{{ agendamento['horario'] }}</td>
                             <td class="py-4 px-6">
-                                <button onclick="openEditModal({{ agendamento|tojson }})" class="text-primary hover:underline mr-4">Editar</button>
-                                <form action="{{ url_for('gerenciar_agendamentos') }}" method="post" class="inline-block" onsubmit="return confirm('Tem certeza que deseja excluir este agendamento?');">
+                                <form action="{{ url_for('painel_profissional_excluir_agendamento') }}" method="post" class="inline-block" onsubmit="return confirm('Tem certeza que deseja cancelar este agendamento?');">
                                     <input type="hidden" name="id" value="{{ agendamento['id'] }}">
-                                    <button type="submit" name="excluir" class="text-red-500 hover:underline">Excluir</button>
+                                    <input type="hidden" name="profissional_nome" value="{{ profissional['nome'] }}">
+                                    <button type="submit" class="text-red-500 hover:underline">Cancelar</button>
                                 </form>
                             </td>
                         </tr>
                         {% else %}
                         <tr class="bg-card">
-                            <td colspan="5" class="py-4 px-6 text-center text-gray-500">Nenhum agendamento para hoje.</td>
+                            <td colspan="4" class="py-4 px-6 text-center text-gray-500">Nenhum agendamento para hoje.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-
         </div>
     </main>
 
     <!-- Modal de Adicionar Agendamento -->
     <div id="add-modal" class="modal-overlay">
         <div class="modal-container">
-            <h3 class="text-2xl font-bold text-primary mb-6">Adicionar Novo Agendamento</h3>
-            <form action="{{ url_for('gerenciar_agendamentos') }}" method="post">
-                <input type="hidden" name="adicionar" value="True">
+            <h3 class="text-2xl font-bold text-primary mb-6">Lançar Novo Agendamento</h3>
+            <form action="{{ url_for('painel_profissional_adicionar_agendamento') }}" method="post">
+                <input type="hidden" name="profissional_nome" value="{{ profissional['nome'] }}">
                 <div class="mb-4">
                     <label for="add_cliente_nome" class="block text-sm font-medium text-gray-400 mb-2">Nome do Cliente</label>
                     <input type="text" id="add_cliente_nome" name="cliente_nome" class="w-full p-3 bg-[#2a2a2a] text-gray-200 border border-[#3a3a3a] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]" required>
-                </div>
-                <div class="mb-4">
-                    <label for="add_profissional" class="block text-sm font-medium text-gray-400 mb-2">Profissional</label>
-                    <select id="add_profissional" name="profissional" class="w-full p-3 bg-[#2a2a2a] text-gray-200 border border-[#3a3a3a] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]" required>
-                        {% for profissional in profissionais %}
-                        <option value="{{ profissional['nome'] }}">{{ profissional['nome'] }}</option>
-                        {% endfor %}
-                    </select>
                 </div>
                 <div class="mb-4">
                     <label for="add_data" class="block text-sm font-medium text-gray-400 mb-2">Data</label>
@@ -166,41 +144,6 @@
                 <div class="flex justify-end space-x-4">
                     <button type="button" onclick="closeModal('add')" class="btn-primary px-6 py-2 rounded-full bg-gray-600 hover:bg-gray-700 text-white">Cancelar</button>
                     <button type="submit" class="btn-primary px-6 py-2 rounded-full">Adicionar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal de Editar Agendamento -->
-    <div id="edit-modal" class="modal-overlay">
-        <div class="modal-container">
-            <h3 class="text-2xl font-bold text-primary mb-6">Editar Agendamento</h3>
-            <form id="edit-form" action="{{ url_for('gerenciar_agendamentos') }}" method="post">
-                <input type="hidden" name="editar" value="True">
-                <input type="hidden" id="edit_id" name="id">
-                <div class="mb-4">
-                    <label for="edit_cliente_nome" class="block text-sm font-medium text-gray-400 mb-2">Nome do Cliente</label>
-                    <input type="text" id="edit_cliente_nome" name="cliente_nome" class="w-full p-3 bg-[#2a2a2a] text-gray-200 border border-[#3a3a3a] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]" required>
-                </div>
-                <div class="mb-4">
-                    <label for="edit_profissional" class="block text-sm font-medium text-gray-400 mb-2">Profissional</label>
-                    <select id="edit_profissional" name="profissional" class="w-full p-3 bg-[#2a2a2a] text-gray-200 border border-[#3a3a3a] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]" required>
-                        {% for profissional in profissionais %}
-                        <option value="{{ profissional['nome'] }}">{{ profissional['nome'] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="mb-4">
-                    <label for="edit_data" class="block text-sm font-medium text-gray-400 mb-2">Data</label>
-                    <input type="date" id="edit_data" name="data" class="w-full p-3 bg-[#2a2a2a] text-gray-200 border border-[#3a3a3a] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]" required>
-                </div>
-                <div class="mb-6">
-                    <label for="edit_horario" class="block text-sm font-medium text-gray-400 mb-2">Horário</label>
-                    <input type="time" id="edit_horario" name="horario" class="w-full p-3 bg-[#2a2a2a] text-gray-200 border border-[#3a3a3a] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#D4AF37]" required>
-                </div>
-                <div class="flex justify-end space-x-4">
-                    <button type="button" onclick="closeModal('edit')" class="btn-primary px-6 py-2 rounded-full bg-gray-600 hover:bg-gray-700 text-white">Cancelar</button>
-                    <button type="submit" class="btn-primary px-6 py-2 rounded-full">Salvar</button>
                 </div>
             </form>
         </div>
@@ -222,15 +165,6 @@
             const modal = document.getElementById(`${type}-modal`);
             modal.classList.remove('open');
             document.body.classList.remove('overflow-hidden');
-        }
-
-        function openEditModal(agendamento) {
-            document.getElementById('edit_id').value = agendamento.id;
-            document.getElementById('edit_cliente_nome').value = agendamento.cliente_nome;
-            document.getElementById('edit_profissional').value = agendamento.profissional;
-            document.getElementById('edit_data').value = agendamento.data;
-            document.getElementById('edit_horario').value = agendamento.horario;
-            openModal('edit');
         }
     </script>
 </body>
